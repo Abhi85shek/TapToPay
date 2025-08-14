@@ -1,38 +1,35 @@
 import { NewAppScreen } from '@react-native/new-app-screen';
 import { StatusBar, StyleSheet, Text, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
-import { NavigationContainer, useNavigation } from '@react-navigation/native';
-import TapToPay from './components/TapToPay';
-import PaymentContainer from './components/PaymentContainer';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { NavigationContainer } from '@react-navigation/native';
 import LoginScreen from './components/LoginScreen';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import RecentPayment from './components/RecentPayment';
-import PaymentSuccessfull from './components/PaymentSuccessfull';
+import MainApp from './components/MainApp';
+import { AuthProvider, useAuth } from './components/AuthContext';
 
-const Tab = createBottomTabNavigator();
+// Component to handle authentication state
+const AppContent = () => {
+  const { isAuthenticated } = useAuth();
+
+  return (
+    <NavigationContainer>
+      {isAuthenticated ? <MainApp /> : <LoginScreen />}
+    </NavigationContainer>
+  );
+};
+
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
 
   return (
     <SafeAreaProvider>
-    <NavigationContainer> 
-    <Tab.Navigator 
-     screenOptions={{
-      headerTitleAlign: 'center', 
-    }}>
-        <Tab.Screen name="LoginPage" component={LoginScreen} />
-        <Tab.Screen name="RecentPayment" component={RecentPayment} />
-        <Tab.Screen name="PaymentSuccessfull" component={PaymentSuccessfull} /> 
-    </Tab.Navigator>
-    </NavigationContainer>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
 
-function AppContent() {
+function AppContentOld() {
   const safeAreaInsets = useSafeAreaInsets();
 
   return (

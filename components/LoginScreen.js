@@ -1,54 +1,122 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-} from 'react-native';
+import React, { useState, useRef } from 'react';
+import {View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
+import { useAuth } from './AuthContext';
+import axios from 'axios';
+import { DOMAIN_URL } from '../config/config';
+import { useNavigation } from '@react-navigation/native';
+import { ToastAndroid } from 'react-native';  
+import AsyncStorage from '@react-native-async-storage/async-storage';
 const LoginScreen = () => {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [uid, setUid] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    if (!isValidEmail(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return;
-    }
-
-    setIsLoading(true);
-    
-    try {
-     
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      Alert.alert('Success', 'Login successful!');
-    } catch (error) {
-      Alert.alert('Error', 'Login failed. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+  const [otpSent, setOtpSent] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const { login } = useAuth();
+  const otpInputRef = useRef(null);
+  const navigation = useNavigation();
+  const startCountdown = () => {
+    setCountdown(60);
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
   };
 
-  const isValidEmail = (email) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+  const getOtp = async () => {
+    if (email && email.includes('@') && email.includes('.')) {
+      setIsLoading(true);
+      const reqUrl = DOMAIN_URL + '/get_otp/login';
+      console.log(reqUrl);
+      try {
+        const res = await axios.post(reqUrl, { email });
+        console.log('OTP Response:', res.data);
+        setUid(res.data.uid); 
+        ToastAndroid.show('Auth Code sent to email', ToastAndroid.SHORT,ToastAndroid.TOP);
+        setOtpSent(true);
+        setOtp('');
+        startCountdown();
+      } catch (err) {
+        setOtp('');
+        Alert.alert(
+          'Error',
+          err.response?.data?.message || 'Something went wrong'
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      setOtp('');
+      Alert.alert('Error', 'Please enter a valid Email');
+    }
   };
+  async function verifyOtp() {
+    if (otp && otp.length === 6) {
+      const reqUrl = DOMAIN_URL + '/login';
+      console.log("reqUrl",reqUrl);
+      try {
+        const res = await axios.post(reqUrl, { email, otp, uid });
+        console.log("res",res);
+        console.log(res.data);
+        if(res.data.token)
+        {
+          ToastAndroid.show('Logged-In Successfully!', ToastAndroid.LONG);
+          AsyncStorage.setItem('token', res.data.token);
+          console.log(res.data.token);
+          login();
+          setOtp('');
+          setOtpSent(false);
+          setCountdown(0);
+          setEmail('');
+          setUid('');
+        }
+         
+        
+      } catch (err) {
+        console.log(err);
+        setOtp('');
+        Alert.alert('Error', err || 'Login failed');
+      }
+      
+    } else {
+      setOtp('');
+      Alert.alert('Error', 'Please enter a valid Auth Code');
+    }
+  }
+  
 
-  const handleForgotPassword = () => {
-    Alert.alert('Forgot Password', 'Password reset functionality will be implemented here.');
+  // const handleVerifyOTP = async () => {
+  //   if (!otp) {
+  //     Alert.alert('Error', 'Please enter the OTP');
+  //     return;
+  //   }
+
+  //   if (otp.length !== 6) {
+  //     Alert.alert('Error', 'Please enter a valid 6-digit OTP');
+  //     return;
+  //   }
+
+  //   setIsLoading(true);
+  //   try {
+  //     await verifyOTP(email, otp);
+  //     // Navigation can happen here if verifyOTP is successful
+  //   } catch (error) {
+  //     Alert.alert('Error', 'Invalid OTP. Please try again.');
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // };
+
+  const handleResendOTP = async () => {
+    if (countdown > 0) return;
+    await getOtp();
   };
 
   return (
@@ -64,69 +132,108 @@ const LoginScreen = () => {
           {/* Header Section */}
           <View style={styles.headerSection}>
             <Text style={styles.title}>TapToPay</Text>
-            <Text style={styles.subtitle}>Sign in to continue</Text>
+            <Text style={styles.subtitle}>
+              {otpSent ? 'Enter OTP to continue' : 'Sign in with OTP'}
+            </Text>
           </View>
 
           {/* Form Section */}
           <View style={styles.formSection}>
-            {/* Email Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter your email"
-                placeholderTextColor="#9CA3AF"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
+            {!otpSent ? (
+              <>
+                {/* Email Input */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Email</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Enter your email"
+                    placeholderTextColor="#9CA3AF"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
 
-            {/* Password Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.passwordContainer}>
-                <TextInput
-                  style={[styles.textInput, styles.passwordInput]}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#9CA3AF"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
+                {/* Send OTP Button */}
                 <TouchableOpacity
-                  style={styles.eyeButton}
-                  onPress={() => setShowPassword(!showPassword)}
+                  style={[
+                    styles.loginButton,
+                    isLoading && styles.loginButtonDisabled,
+                  ]}
+                  onPress={getOtp}
+                  disabled={isLoading}
                 >
-                  <Text style={styles.eyeIcon}>
-                    {showPassword ? '👁️' : '👁️‍🗨️'}
+                  <Text style={styles.loginButtonText}>
+                    {isLoading ? 'Sending...' : 'Send OTP'}
                   </Text>
                 </TouchableOpacity>
-              </View>
-            </View>
+              </>
+            ) : (
+              <>
+                {/* OTP Input */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Enter OTP</Text>
+                  <TextInput
+                    ref={otpInputRef}
+                    style={styles.textInput}
+                    placeholder="Enter 6-digit OTP"
+                    placeholderTextColor="#9CA3AF"
+                    value={otp}
+                    onChangeText={setOtp}
+                    keyboardType="number-pad"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={6}
+                  />
+                </View>
 
-            {/* Forgot Password Link */}
-            <TouchableOpacity
-              style={styles.forgotPasswordContainer}
-            //   onPress={handleForgotPassword}
-            >
-              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-            </TouchableOpacity>
+                {/* Resend OTP Link */}
+                <TouchableOpacity
+                  style={styles.forgotPasswordContainer}
+                  onPress={handleResendOTP}
+                  disabled={countdown > 0}
+                >
+                  <Text
+                    style={[
+                      styles.forgotPasswordText,
+                      countdown > 0 && styles.disabledText,
+                    ]}
+                  >
+                    {countdown > 0
+                      ? `Resend OTP in ${countdown}s`
+                      : 'Resend OTP'}
+                  </Text>
+                </TouchableOpacity>
 
-            {/* Login Button */}
-            <TouchableOpacity
-              style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
-              onPress={handleLogin}
-              disabled={isLoading}
-            >
-              <Text style={styles.loginButtonText}>
-                {isLoading ? 'Loading...' : 'Login'}
-              </Text>
-            </TouchableOpacity>
+                {/* Verify OTP Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.loginButton,
+                    isLoading && styles.loginButtonDisabled,
+                  ]}
+                  onPress={verifyOtp}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.loginButtonText}>
+                    {isLoading ? 'Verifying...' : 'Verify OTP'}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Back to Email */}
+                <TouchableOpacity
+                  style={styles.backButton}
+                  onPress={() => {
+                    setOtpSent(false);
+                    setOtp('');
+                    setCountdown(0);
+                  }}
+                >
+                  <Text style={styles.backButtonText}>Change Email</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -153,7 +260,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontFamily:"Inter-Regular",
+    fontFamily: 'Inter-Regular',
     fontWeight: '700',
     color: '#111827',
     marginBottom: 8,
@@ -188,28 +295,26 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontWeight: '400',
   },
-  passwordContainer: {
-    position: 'relative',
-  },
-  passwordInput: {
-    paddingRight: 48,
-  },
-  eyeButton: {
-    position: 'absolute',
-    right: 12,
-    top: 14,
-    padding: 4,
-  },
-  eyeIcon: {
-    fontSize: 18,
-  },
   forgotPasswordContainer: {
-    alignItems: 'flex-end',
+    alignItems: 'center',
     marginBottom: 32,
   },
   forgotPasswordText: {
     fontSize: 14,
     color: '#3B82F6',
+    fontWeight: '500',
+  },
+  disabledText: {
+    color: '#9CA3AF',
+  },
+  backButton: {
+    marginTop: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  backButtonText: {
+    fontSize: 14,
+    color: '#6B7280',
     fontWeight: '500',
   },
   loginButton: {
@@ -218,10 +323,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
